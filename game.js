@@ -25,7 +25,7 @@
   const CAMERA_MIN_Y = -240;      // Camera vertical top
   const CAMERA_MAX_Y = 570;       // Camera vertical bottom (Ground at y=480)
   const WORLD_WIDTH = 4500;       // Extended world for up to 130m
-  const CATAPULT_X = 160;
+  const CATAPULT_X = 360;
   const CATAPULT_Y = 360;
   let GOAL_X = 1900;
   const GOAL_Y = 480;
