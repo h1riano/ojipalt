@@ -13,18 +13,21 @@
     MouseConstraint,
     Vector,
     Body,
-    Events
+    Events,
+    Bounds
   } = Matter;
 
   // Constants
-  const CANVAS_WIDTH = 960;
-  const CANVAS_HEIGHT = 540;
+  const VIEW_WIDTH = 960;
+  const VIEW_HEIGHT = 540;
+  const WORLD_WIDTH = 2500;
   const CATAPULT_X = 160;
   const CATAPULT_Y = 360;
-  const GOAL_X = 720;
+  const GOAL_X = 1900;
   const GOAL_Y = 480;
-  const GOAL_WIDTH = 160;
+  const GOAL_WIDTH = 180;
   const GOAL_HEIGHT = 20;
+  const PIXELS_PER_METER = 30; // 30px = 1m
 
   // DOM Elements
   const canvasWrapper = document.getElementById('canvas-wrapper');
@@ -42,12 +45,14 @@
   let gameState = 'aiming';
   let boostUsed = false;
   let isDragging = false;
+  let cameraX = 0;
 
   // Matter.js Engine & World references
   let engine, render, runner;
   let ojisanRagdoll = null;
   let elasticConstraint = null;
   let mouseConstraint = null;
+  let mouse = null;
   let goalZone = null;
   let ground = null;
   let boostParticleEffects = [];
@@ -64,10 +69,11 @@
       element: canvasWrapper,
       engine: engine,
       options: {
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
+        width: VIEW_WIDTH,
+        height: VIEW_HEIGHT,
         wireframes: false,
-        background: '#87ceeb' // Sky blue
+        background: '#87ceeb', // Sky blue
+        hasBounds: true
       }
     });
 
@@ -79,9 +85,6 @@
 
     // Setup world environment & objects
     setupWorld();
-
-    // Mouse & Touch Controls
-    setupControls();
 
     // Event Listeners for Game Loop
     Events.on(engine, 'afterUpdate', updateGameLoop);
@@ -104,20 +107,24 @@
   function setupWorld() {
     Composite.clear(engine.world, false);
 
-    // Boundaries
-    ground = Bodies.rectangle(CANVAS_WIDTH / 2, 510, CANVAS_WIDTH * 2, 60, {
+    // Camera reset
+    cameraX = 0;
+    updateCameraPosition();
+
+    // Ground spanning entire world width
+    ground = Bodies.rectangle(WORLD_WIDTH / 2, 510, WORLD_WIDTH + 1000, 60, {
       isStatic: true,
       label: 'ground',
       render: { fillStyle: '#4a7c59' }
     });
 
-    const leftWall = Bodies.rectangle(-20, CANVAS_HEIGHT / 2, 40, CANVAS_HEIGHT * 2, {
+    const leftWall = Bodies.rectangle(-20, VIEW_HEIGHT / 2, 40, VIEW_HEIGHT * 2, {
       isStatic: true
     });
-    const rightWall = Bodies.rectangle(CANVAS_WIDTH + 20, CANVAS_HEIGHT / 2, 40, CANVAS_HEIGHT * 2, {
+    const rightWall = Bodies.rectangle(WORLD_WIDTH + 100, VIEW_HEIGHT / 2, 40, VIEW_HEIGHT * 2, {
       isStatic: true
     });
-    const ceiling = Bodies.rectangle(CANVAS_WIDTH / 2, -500, CANVAS_WIDTH * 2, 40, {
+    const ceiling = Bodies.rectangle(WORLD_WIDTH / 2, -600, WORLD_WIDTH * 2, 40, {
       isStatic: true
     });
 
@@ -164,6 +171,9 @@
       ...ojisanRagdoll.constraints,
       elasticConstraint
     ]);
+
+    // Setup Mouse Controls safely (Re-bind mouse constraint on every reset to fix retry drag issue)
+    setupControls();
   }
 
   // Create 5-Part Ojisan (Ragdoll)
@@ -272,9 +282,13 @@
     };
   }
 
-  // Setup Mouse Interaction
+  // Setup Mouse Interaction safely
   function setupControls() {
-    const mouse = Mouse.create(render.canvas);
+    if (mouseConstraint) {
+      Composite.remove(engine.world, mouseConstraint);
+    }
+
+    mouse = Mouse.create(render.canvas);
     mouseConstraint = MouseConstraint.create(engine, {
       mouse: mouse,
       constraint: {
@@ -290,7 +304,7 @@
       if (gameState === 'aiming') {
         const body = event.body;
         // Check if dragged body is part of Ojisan
-        if (ojisanRagdoll.bodies.includes(body)) {
+        if (ojisanRagdoll && ojisanRagdoll.bodies.includes(body)) {
           isDragging = true;
         }
       }
@@ -303,14 +317,14 @@
         const torsoPos = ojisanRagdoll.torso.position;
         const dist = Vector.magnitude(Vector.sub(torsoPos, { x: CATAPULT_X, y: CATAPULT_Y - 20 }));
 
-        if (dist > 30) {
+        if (dist > 25) {
           launchOjisan();
         }
       }
     });
   }
 
-  // Launch Launch Ojisan from Catapult
+  // Launch Ojisan from Catapult
   function launchOjisan() {
     gameState = 'flying';
     updateUIStatus();
@@ -327,12 +341,10 @@
   // Handle Air Boost Click/Tap
   function handleCanvasClick(e) {
     if (gameState !== 'flying' || boostUsed) return;
-
-    // Trigger Mid-air Boost
     triggerBoost();
   }
 
-  // Single-use Mid-Air Boost
+  // Single-use Mid-Air Boost (Adjusted to behave like a controlled 2nd jump / direction shift)
   function triggerBoost() {
     boostUsed = true;
     boostStatusEl.textContent = 'BOOST: USED';
@@ -346,50 +358,69 @@
       setTimeout(() => boostEffectIndicator.classList.add('hidden'), 300);
     }, 800);
 
-    // Calculate Ojisan's butt/pelvis angle & direction
-    // Boost pushes Ojisan in direction from pelvis to head or forward angle
+    // Calculate Ojisan's pelvis to head direction vector
     const pelvisPos = ojisanRagdoll.pelvis.position;
     const torsoPos = ojisanRagdoll.torso.position;
     const headPos = ojisanRagdoll.head.position;
 
-    // Vector pointing from pelvis towards head/torso (facing direction)
     let dir = Vector.sub(headPos, pelvisPos);
     let mag = Vector.magnitude(dir);
     if (mag === 0) {
-      dir = { x: 1, y: -0.5 };
+      dir = { x: 0.8, y: -0.6 };
     } else {
       dir = Vector.normalise(dir);
     }
 
-    // Add strong forward-upward thrust impulse
-    const boostForceMagnitude = 0.18;
-    // Direct force vector favoring rightward trajectory
-    const forceVector = {
-      x: dir.x * boostForceMagnitude + 0.12,
-      y: dir.y * boostForceMagnitude - 0.12
-    };
+    // Softened impulse for a smooth 2nd-jump / mid-air direction shift
+    const boostForceX = 0.05 + Math.max(0, dir.x * 0.04);
+    const boostForceY = -0.07; // Upward jump boost
 
-    // Apply force to pelvis, torso, and head
-    Body.applyForce(ojisanRagdoll.pelvis, pelvisPos, forceVector);
-    Body.applyForce(ojisanRagdoll.torso, torsoPos, forceVector);
-    Body.applyForce(ojisanRagdoll.head, headPos, forceVector);
+    const forceVector = { x: boostForceX, y: boostForceY };
 
-    // Create particle effect at pelvis location
-    for (let i = 0; i < 15; i++) {
+    // Set gentle velocity boost and apply controlled force across body parts
+    ojisanRagdoll.bodies.forEach(part => {
+      // Gentle velocity adjustment
+      Body.setVelocity(part, {
+        x: Math.min(part.velocity.x + 5, 14),
+        y: Math.min(part.velocity.y - 6, -4)
+      });
+      Body.applyForce(part, part.position, forceVector);
+    });
+
+    // Create subtle particles at pelvis location
+    for (let i = 0; i < 12; i++) {
       boostParticleEffects.push({
         x: pelvisPos.x,
         y: pelvisPos.y,
-        vx: (Math.random() - 0.5) * 8 - forceVector.x * 30,
-        vy: (Math.random() - 0.5) * 8 - forceVector.y * 30,
-        size: Math.random() * 12 + 6,
+        vx: (Math.random() - 0.5) * 6 - forceVector.x * 20,
+        vy: (Math.random() - 0.5) * 6 - forceVector.y * 20,
+        size: Math.random() * 10 + 4,
         life: 1.0,
         color: ['#ff4500', '#ff8c00', '#ffd700', '#ffffff'][Math.floor(Math.random() * 4)]
       });
     }
   }
 
+  // Camera tracking helper
+  function updateCameraPosition() {
+    if (ojisanRagdoll && ojisanRagdoll.torso) {
+      const torsoX = ojisanRagdoll.torso.position.x;
+      // Target cameraX centers torso in the left-center of screen
+      const targetCameraX = Math.max(0, Math.min(WORLD_WIDTH - VIEW_WIDTH, torsoX - VIEW_WIDTH * 0.35));
+      // Smooth camera interpolation
+      cameraX += (targetCameraX - cameraX) * 0.1;
+    } else {
+      cameraX = 0;
+    }
+
+    Bounds.shift(render.bounds, { x: cameraX, y: 0 });
+  }
+
   // Main Loop Game Logic Update
   function updateGameLoop() {
+    // Update camera follow
+    updateCameraPosition();
+
     // Update boost particles
     for (let i = boostParticleEffects.length - 1; i >= 0; i--) {
       const p = boostParticleEffects[i];
@@ -420,7 +451,6 @@
 
   // Evaluate Win / Fail Condition
   function evaluateResult() {
-    // Check if torso or pelvis is inside goal zone bounds
     const torsoPos = ojisanRagdoll.torso.position;
     const pelvisPos = ojisanRagdoll.pelvis.position;
     const headPos = ojisanRagdoll.head.position;
@@ -432,12 +462,14 @@
                     (inGoalX(pelvisPos) && inGoalY(pelvisPos)) ||
                     (inGoalX(headPos) && inGoalY(headPos));
 
+    const finalMeters = Math.max(0, Math.round((torsoPos.x - CATAPULT_X) / PIXELS_PER_METER));
+
     if (isClear) {
       gameState = 'clear';
-      showResultOverlay(true, 'CLEAR!', 'おじさんは見事にゴールエリア内に着地しました！おめでとう！');
+      showResultOverlay(true, 'CLEAR!', `おじさんは見事にゴールエリア（${finalMeters}m）内に着地しました！おめでとう！`);
     } else {
       gameState = 'failed';
-      showResultOverlay(false, 'FAILED...', 'おじさんはゴールを外れてしまいました。もう一度挑戦しよう！');
+      showResultOverlay(false, 'FAILED...', `記録: ${finalMeters}m。ゴール（${Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER)}m）に届きませんでした。もう一度挑戦しよう！`);
     }
     updateUIStatus();
   }
@@ -472,6 +504,7 @@
   function resetGame() {
     gameState = 'aiming';
     boostUsed = false;
+    isDragging = false;
 
     boostStatusEl.textContent = 'BOOST: READY';
     boostStatusEl.className = 'status-badge boost-ready';
@@ -483,23 +516,51 @@
     setupWorld();
   }
 
-  // Custom Drawing for Ojisan's Face, Goal Banner, Effects
+  // Custom Drawing for Distance Meter, Ojisan Face, Goal Banner, Effects
   function customRender() {
     const ctx = render.context;
 
-    // 1. Draw Goal Zone Banner & Flag
+    // Render in World Coordinates (Offset by cameraX)
+    ctx.save();
+    ctx.translate(-cameraX, 0);
+
+    // 1. Distance Ruler Meter along Ground
+    const groundY = 480;
+    const goalDistanceMeters = Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+
+    // Draw meter ticks every 5m (150px) up to world end
+    for (let meters = 0; meters <= Math.round(WORLD_WIDTH / PIXELS_PER_METER); meters += 5) {
+      const x = CATAPULT_X + meters * PIXELS_PER_METER;
+      if (x >= cameraX - 100 && x <= cameraX + VIEW_WIDTH + 100) {
+        ctx.beginPath();
+        ctx.moveTo(x, groundY);
+        ctx.lineTo(x, groundY + 12);
+        ctx.stroke();
+
+        ctx.fillText(`${meters}m`, x, groundY + 24);
+      }
+    }
+    ctx.restore();
+
+    // 2. Goal Zone Banner & Distance Indicator
     ctx.save();
     ctx.fillStyle = '#ffcc00';
     ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('🏁 GOAL AREA 🏁', GOAL_X, GOAL_Y - 25);
+    ctx.fillText(`🏁 GOAL AREA (${goalDistanceMeters}m) 🏁`, GOAL_X, GOAL_Y - 25);
 
     ctx.strokeStyle = '#ffffff';
     ctx.setLineDash([5, 5]);
     ctx.strokeRect(GOAL_X - GOAL_WIDTH / 2, GOAL_Y - 20, GOAL_WIDTH, GOAL_HEIGHT + 10);
     ctx.restore();
 
-    // 2. Draw Catapult Sling Lines if aiming
+    // 3. Catapult Sling Lines if aiming
     if (gameState === 'aiming' && elasticConstraint && elasticConstraint.bodyB) {
       ctx.save();
       ctx.strokeStyle = '#8b0000';
@@ -513,7 +574,7 @@
       ctx.restore();
     }
 
-    // 3. Draw Ojisan Bald Head, Moustache, Eyes
+    // 4. Ojisan Bald Head, Moustache, Eyes
     if (ojisanRagdoll && ojisanRagdoll.head) {
       const head = ojisanRagdoll.head;
       const pos = head.position;
@@ -551,7 +612,7 @@
       ctx.restore();
     }
 
-    // 4. Render Boost Particles
+    // 5. Render Boost Particles
     ctx.save();
     boostParticleEffects.forEach(p => {
       ctx.fillStyle = p.color;
@@ -561,6 +622,8 @@
       ctx.fill();
     });
     ctx.restore();
+
+    ctx.restore(); // Restore camera translation
   }
 
   // Start initialization when page is loaded
