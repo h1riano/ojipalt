@@ -20,19 +20,17 @@
   // Constants
   const VIEW_WIDTH = 960;
   const VIEW_HEIGHT = 540;
-  const CAMERA_WIDTH = 1280;   // Zoomed-out camera view width
-  const CAMERA_HEIGHT = 720;   // Zoomed-out camera view height
-  const WORLD_WIDTH = 4500;    // Extended world width for 60m - 130m
+  const WORLD_WIDTH = 2500;
   const CATAPULT_X = 160;
-  const CATAPULT_Y = 360;      // Standard catapult position
+  const CATAPULT_Y = 360;
+  const GOAL_X = 1900;
   const GOAL_Y = 480;
   const GOAL_WIDTH = 180;
   const GOAL_HEIGHT = 20;
-  const PIXELS_PER_METER = 25; // 25px = 1m
+  const PIXELS_PER_METER = 30; // 30px = 1m
 
   // DOM Elements
   const canvasWrapper = document.getElementById('canvas-wrapper');
-  const targetStatusEl = document.getElementById('target-status');
   const boostStatusEl = document.getElementById('boost-status');
   const gameStatusEl = document.getElementById('game-status');
   const retryBtn = document.getElementById('retry-btn');
@@ -41,15 +39,13 @@
   const resultCard = document.getElementById('result-card');
   const resultTitle = document.getElementById('result-title');
   const resultMessage = document.getElementById('result-message');
+  const boostEffectIndicator = document.getElementById('boost-effect-indicator');
 
   // Game States: 'aiming', 'flying', 'settled', 'clear', 'failed'
   let gameState = 'aiming';
   let boostUsed = false;
   let isDragging = false;
   let cameraX = 0;
-  let cameraY = -120; // Default vertical offset to balance ground level
-  let targetGoalMeters = 100;
-  let goalX = 2660;
 
   // Matter.js Engine & World references
   let engine, render, runner;
@@ -111,18 +107,8 @@
   function setupWorld() {
     Composite.clear(engine.world, false);
 
-    // 1. Randomize Goal Distance (60m to 130m)
-    targetGoalMeters = Math.floor(Math.random() * (130 - 60 + 1)) + 60;
-    goalX = CATAPULT_X + targetGoalMeters * PIXELS_PER_METER;
-
-    // Update Target UI Badge
-    if (targetStatusEl) {
-      targetStatusEl.textContent = `TARGET: ${targetGoalMeters}m`;
-    }
-
     // Camera reset
     cameraX = 0;
-    cameraY = -120;
     updateCameraPosition();
 
     // Ground spanning entire world width
@@ -132,18 +118,18 @@
       render: { fillStyle: '#4a7c59' }
     });
 
-    const leftWall = Bodies.rectangle(-20, CAMERA_HEIGHT / 2, 40, CAMERA_HEIGHT * 2, {
+    const leftWall = Bodies.rectangle(-20, VIEW_HEIGHT / 2, 40, VIEW_HEIGHT * 2, {
       isStatic: true
     });
-    const rightWall = Bodies.rectangle(WORLD_WIDTH + 100, CAMERA_HEIGHT / 2, 40, CAMERA_HEIGHT * 2, {
+    const rightWall = Bodies.rectangle(WORLD_WIDTH + 100, VIEW_HEIGHT / 2, 40, VIEW_HEIGHT * 2, {
       isStatic: true
     });
-    const ceiling = Bodies.rectangle(WORLD_WIDTH / 2, -1200, WORLD_WIDTH * 2, 40, {
+    const ceiling = Bodies.rectangle(WORLD_WIDTH / 2, -600, WORLD_WIDTH * 2, 40, {
       isStatic: true
     });
 
     // Goal Zone Area
-    goalZone = Bodies.rectangle(goalX, GOAL_Y, GOAL_WIDTH, GOAL_HEIGHT, {
+    goalZone = Bodies.rectangle(GOAL_X, GOAL_Y, GOAL_WIDTH, GOAL_HEIGHT, {
       isStatic: true,
       isSensor: true,
       label: 'goalZone',
@@ -186,7 +172,7 @@
       elasticConstraint
     ]);
 
-    // Setup Mouse Controls safely
+    // Setup Mouse Controls safely (Re-bind mouse constraint on every reset to fix retry drag issue)
     setupControls();
   }
 
@@ -303,11 +289,6 @@
     }
 
     mouse = Mouse.create(render.canvas);
-    Mouse.setScale(mouse, {
-      x: CAMERA_WIDTH / VIEW_WIDTH,
-      y: CAMERA_HEIGHT / VIEW_HEIGHT
-    });
-
     mouseConstraint = MouseConstraint.create(engine, {
       mouse: mouse,
       constraint: {
@@ -322,6 +303,7 @@
     Events.on(mouseConstraint, 'startdrag', (event) => {
       if (gameState === 'aiming') {
         const body = event.body;
+        // Check if dragged body is part of Ojisan
         if (ojisanRagdoll && ojisanRagdoll.bodies.includes(body)) {
           isDragging = true;
         }
@@ -331,6 +313,7 @@
     Events.on(mouseConstraint, 'enddrag', () => {
       if (gameState === 'aiming' && isDragging) {
         isDragging = false;
+        // Check drag distance from catapult origin
         const torsoPos = ojisanRagdoll.torso.position;
         const dist = Vector.magnitude(Vector.sub(torsoPos, { x: CATAPULT_X, y: CATAPULT_Y - 20 }));
 
@@ -346,6 +329,7 @@
     gameState = 'flying';
     updateUIStatus();
 
+    // Release elastic constraint after a brief moment to simulate sling release
     setTimeout(() => {
       if (elasticConstraint) {
         Composite.remove(engine.world, elasticConstraint);
@@ -360,13 +344,25 @@
     triggerBoost();
   }
 
-  // Single-use Mid-Air Boost (Weakened gentle nudge, no text overlay)
+  // Single-use Mid-Air Boost (Adjusted to behave like a controlled 2nd jump / direction shift)
   function triggerBoost() {
     boostUsed = true;
     boostStatusEl.textContent = 'BOOST: USED';
     boostStatusEl.className = 'status-badge boost-used';
 
+    // Show visual effect indicator banner
+    if (boostEffectIndicator) {
+      boostEffectIndicator.classList.remove('hidden');
+      boostEffectIndicator.classList.add('active');
+      setTimeout(() => {
+        boostEffectIndicator.classList.remove('active');
+        setTimeout(() => boostEffectIndicator.classList.add('hidden'), 300);
+      }, 800);
+    }
+
+    // Calculate Ojisan's pelvis to head direction vector
     const pelvisPos = ojisanRagdoll.pelvis.position;
+    const torsoPos = ojisanRagdoll.torso.position;
     const headPos = ojisanRagdoll.head.position;
 
     let dir = Vector.sub(headPos, pelvisPos);
@@ -377,65 +373,57 @@
       dir = Vector.normalise(dir);
     }
 
-    // Weakened gentle force nudge
-    const boostForceX = 0.015 + Math.max(0, dir.x * 0.015);
-    const boostForceY = -0.025; // Gentle upward nudge
+    // Softened impulse for a smooth 2nd-jump / mid-air direction shift
+    const boostForceX = 0.05 + Math.max(0, dir.x * 0.04);
+    const boostForceY = -0.07; // Upward jump boost
 
     const forceVector = { x: boostForceX, y: boostForceY };
 
-    // Set gentle velocity adjustment
+    // Set gentle velocity boost and apply controlled force across body parts
     ojisanRagdoll.bodies.forEach(part => {
+      // Gentle velocity adjustment
       Body.setVelocity(part, {
-        x: Math.min(part.velocity.x + 2, 11),
-        y: Math.min(part.velocity.y - 2.5, -1.5)
+        x: Math.min(part.velocity.x + 5, 14),
+        y: Math.min(part.velocity.y - 6, -4)
       });
       Body.applyForce(part, part.position, forceVector);
     });
 
     // Create subtle particles at pelvis location
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       boostParticleEffects.push({
         x: pelvisPos.x,
         y: pelvisPos.y,
-        vx: (Math.random() - 0.5) * 4 - forceVector.x * 10,
-        vy: (Math.random() - 0.5) * 4 - forceVector.y * 10,
-        size: Math.random() * 8 + 3,
-        life: 0.8,
+        vx: (Math.random() - 0.5) * 6 - forceVector.x * 20,
+        vy: (Math.random() - 0.5) * 6 - forceVector.y * 20,
+        size: Math.random() * 10 + 4,
+        life: 1.0,
         color: ['#ff4500', '#ff8c00', '#ffd700', '#ffffff'][Math.floor(Math.random() * 4)]
       });
     }
   }
 
-  // Camera tracking helper with Zoom-out view
+  // Camera tracking helper
   function updateCameraPosition() {
     if (ojisanRagdoll && ojisanRagdoll.torso) {
       const torsoX = ojisanRagdoll.torso.position.x;
-      const torsoY = ojisanRagdoll.torso.position.y;
-
-      const targetCameraX = Math.max(0, Math.min(WORLD_WIDTH - CAMERA_WIDTH, torsoX - CAMERA_WIDTH * 0.35));
-      const targetCameraY = Math.min(-60, Math.max(-350, torsoY - CAMERA_HEIGHT * 0.65));
-
+      // Target cameraX centers torso in the left-center of screen
+      const targetCameraX = Math.max(0, Math.min(WORLD_WIDTH - VIEW_WIDTH, torsoX - VIEW_WIDTH * 0.35));
+      // Smooth camera interpolation
       cameraX += (targetCameraX - cameraX) * 0.1;
-      cameraY += (targetCameraY - cameraY) * 0.1;
     } else {
       cameraX = 0;
-      cameraY = -120;
     }
 
-    render.bounds.min.x = cameraX;
-    render.bounds.max.x = cameraX + CAMERA_WIDTH;
-    render.bounds.min.y = cameraY;
-    render.bounds.max.y = cameraY + CAMERA_HEIGHT;
-
-    if (mouse) {
-      Mouse.setOffset(mouse, render.bounds.min);
-    }
+    Bounds.shift(render.bounds, { x: cameraX, y: 0 });
   }
 
   // Main Loop Game Logic Update
   function updateGameLoop() {
+    // Update camera follow
     updateCameraPosition();
 
+    // Update boost particles
     for (let i = boostParticleEffects.length - 1; i >= 0; i--) {
       const p = boostParticleEffects[i];
       p.x += p.vx;
@@ -447,6 +435,7 @@
     }
 
     if (gameState === 'flying') {
+      // Check overall speed of ragdoll
       let totalSpeed = 0;
       ojisanRagdoll.bodies.forEach(b => {
         totalSpeed += b.speed;
@@ -454,6 +443,7 @@
 
       const avgSpeed = totalSpeed / ojisanRagdoll.bodies.length;
 
+      // Check if settled (stopped moving significantly)
       if (avgSpeed < 0.25) {
         gameState = 'settled';
         evaluateResult();
@@ -461,27 +451,27 @@
     }
   }
 
-  // Evaluate Win / Fail Condition (Relaxed: CLEAR if ANY body part touches goal zone box)
+  // Evaluate Win / Fail Condition
   function evaluateResult() {
-    const goalLeft = goalX - GOAL_WIDTH / 2;
-    const goalRight = goalX + GOAL_WIDTH / 2;
-    const goalTop = GOAL_Y - 30;
-    const goalBottom = GOAL_Y + 40;
-
-    const isClear = ojisanRagdoll.bodies.some(part => {
-      const pos = part.position;
-      return pos.x >= goalLeft && pos.x <= goalRight && pos.y >= goalTop && pos.y <= goalBottom;
-    });
-
     const torsoPos = ojisanRagdoll.torso.position;
+    const pelvisPos = ojisanRagdoll.pelvis.position;
+    const headPos = ojisanRagdoll.head.position;
+
+    const inGoalX = (pos) => pos.x >= GOAL_X - GOAL_WIDTH / 2 && pos.x <= GOAL_X + GOAL_WIDTH / 2;
+    const inGoalY = (pos) => pos.y >= GOAL_Y - 30 && pos.y <= GOAL_Y + 40;
+
+    const isClear = (inGoalX(torsoPos) && inGoalY(torsoPos)) ||
+                    (inGoalX(pelvisPos) && inGoalY(pelvisPos)) ||
+                    (inGoalX(headPos) && inGoalY(headPos));
+
     const finalMeters = Math.max(0, Math.round((torsoPos.x - CATAPULT_X) / PIXELS_PER_METER));
 
     if (isClear) {
       gameState = 'clear';
-      showResultOverlay(true, 'CLEAR!', `おじさんは見事に目標地点（${targetGoalMeters}m）のゴールエリアに着地しました！おめでとう！`);
+      showResultOverlay(true, 'CLEAR!', `おじさんは見事にゴールエリア（${finalMeters}m）内に着地しました！おめでとう！`);
     } else {
       gameState = 'failed';
-      showResultOverlay(false, 'FAILED...', `記録: ${finalMeters}m。目標地点（${targetGoalMeters}m）に届きませんでした。もう一度挑戦しよう！`);
+      showResultOverlay(false, 'FAILED...', `記録: ${finalMeters}m。ゴール（${Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER)}m）に届きませんでした。もう一度挑戦しよう！`);
     }
     updateUIStatus();
   }
@@ -522,6 +512,9 @@
     boostStatusEl.className = 'status-badge boost-ready';
 
     resultOverlay.classList.add('hidden');
+    if (boostEffectIndicator) {
+      boostEffectIndicator.classList.add('hidden');
+    }
 
     updateUIStatus();
     setupWorld();
@@ -531,25 +524,30 @@
   function customRender() {
     const ctx = render.context;
 
+    // Render in World Coordinates (Offset by cameraX)
+    ctx.save();
+    ctx.translate(-cameraX, 0);
+
     // 1. Distance Ruler Meter along Ground
     const groundY = 480;
+    const goalDistanceMeters = Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER);
 
     ctx.save();
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.font = 'bold 16px sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
 
-    for (let meters = 0; meters <= Math.round(WORLD_WIDTH / PIXELS_PER_METER); meters += 10) {
+    // Draw meter ticks every 5m (150px) up to world end
+    for (let meters = 0; meters <= Math.round(WORLD_WIDTH / PIXELS_PER_METER); meters += 5) {
       const x = CATAPULT_X + meters * PIXELS_PER_METER;
-      if (x >= cameraX - 200 && x <= cameraX + CAMERA_WIDTH + 200) {
+      if (x >= cameraX - 100 && x <= cameraX + VIEW_WIDTH + 100) {
         ctx.beginPath();
         ctx.moveTo(x, groundY);
-        ctx.lineTo(x, groundY + 16);
-        ctx.lineWidth = 2;
+        ctx.lineTo(x, groundY + 12);
         ctx.stroke();
 
-        ctx.fillText(`${meters}m`, x, groundY + 36);
+        ctx.fillText(`${meters}m`, x, groundY + 24);
       }
     }
     ctx.restore();
@@ -557,21 +555,20 @@
     // 2. Goal Zone Banner & Distance Indicator
     ctx.save();
     ctx.fillStyle = '#ffcc00';
-    ctx.font = 'bold 22px sans-serif';
+    ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`🏁 GOAL AREA (${targetGoalMeters}m) 🏁`, goalX, GOAL_Y - 30);
+    ctx.fillText(`🏁 GOAL AREA (${goalDistanceMeters}m) 🏁`, GOAL_X, GOAL_Y - 25);
 
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([6, 6]);
-    ctx.strokeRect(goalX - GOAL_WIDTH / 2, GOAL_Y - 20, GOAL_WIDTH, GOAL_HEIGHT + 10);
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(GOAL_X - GOAL_WIDTH / 2, GOAL_Y - 20, GOAL_WIDTH, GOAL_HEIGHT + 10);
     ctx.restore();
 
     // 3. Catapult Sling Lines if aiming
     if (gameState === 'aiming' && elasticConstraint && elasticConstraint.bodyB) {
       ctx.save();
       ctx.strokeStyle = '#8b0000';
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(CATAPULT_X - 10, CATAPULT_Y + 20);
       ctx.lineTo(ojisanRagdoll.torso.position.x, ojisanRagdoll.torso.position.y);
@@ -629,6 +626,8 @@
       ctx.fill();
     });
     ctx.restore();
+
+    ctx.restore(); // Restore camera translation
   }
 
   // Start initialization when page is loaded
