@@ -20,10 +20,14 @@
   // Constants
   const VIEW_WIDTH = 960;
   const VIEW_HEIGHT = 540;
-  const WORLD_WIDTH = 2500;
+  const VIEW_BOUNDS_WIDTH = 1440; // Zoom-out camera width
+  const VIEW_BOUNDS_HEIGHT = 810; // Zoom-out camera height
+  const CAMERA_MIN_Y = -240;      // Camera vertical top
+  const CAMERA_MAX_Y = 570;       // Camera vertical bottom (Ground at y=480)
+  const WORLD_WIDTH = 4500;       // Extended world for up to 130m
   const CATAPULT_X = 160;
   const CATAPULT_Y = 360;
-  const GOAL_X = 1900;
+  let GOAL_X = 1900;
   const GOAL_Y = 480;
   const GOAL_WIDTH = 180;
   const GOAL_HEIGHT = 20;
@@ -31,6 +35,7 @@
 
   // DOM Elements
   const canvasWrapper = document.getElementById('canvas-wrapper');
+  const targetStatusEl = document.getElementById('target-status');
   const boostStatusEl = document.getElementById('boost-status');
   const gameStatusEl = document.getElementById('game-status');
   const retryBtn = document.getElementById('retry-btn');
@@ -39,7 +44,6 @@
   const resultCard = document.getElementById('result-card');
   const resultTitle = document.getElementById('result-title');
   const resultMessage = document.getElementById('result-message');
-  const boostEffectIndicator = document.getElementById('boost-effect-indicator');
 
   // Game States: 'aiming', 'flying', 'settled', 'clear', 'failed'
   let gameState = 'aiming';
@@ -127,6 +131,14 @@
     const ceiling = Bodies.rectangle(WORLD_WIDTH / 2, -600, WORLD_WIDTH * 2, 40, {
       isStatic: true
     });
+
+    // Randomize Goal Distance between 55m and 125m
+    const randomMeters = Math.floor(Math.random() * (125 - 55 + 1)) + 55;
+    GOAL_X = CATAPULT_X + randomMeters * PIXELS_PER_METER;
+
+    if (targetStatusEl) {
+      targetStatusEl.textContent = `🎯 TARGET: ${randomMeters}m`;
+    }
 
     // Goal Zone Area
     goalZone = Bodies.rectangle(GOAL_X, GOAL_Y, GOAL_WIDTH, GOAL_HEIGHT, {
@@ -350,15 +362,6 @@
     boostStatusEl.textContent = 'BOOST: USED';
     boostStatusEl.className = 'status-badge boost-used';
 
-    // Show visual effect indicator banner
-    if (boostEffectIndicator) {
-      boostEffectIndicator.classList.remove('hidden');
-      boostEffectIndicator.classList.add('active');
-      setTimeout(() => {
-        boostEffectIndicator.classList.remove('active');
-        setTimeout(() => boostEffectIndicator.classList.add('hidden'), 300);
-      }, 800);
-    }
 
     // Calculate Ojisan's pelvis to head direction vector
     const pelvisPos = ojisanRagdoll.pelvis.position;
@@ -403,19 +406,34 @@
     }
   }
 
-  // Camera tracking helper
+  // Camera tracking helper with zoom-out bounds
   function updateCameraPosition() {
     if (ojisanRagdoll && ojisanRagdoll.torso) {
       const torsoX = ojisanRagdoll.torso.position.x;
-      // Target cameraX centers torso in the left-center of screen
-      const targetCameraX = Math.max(0, Math.min(WORLD_WIDTH - VIEW_WIDTH, torsoX - VIEW_WIDTH * 0.35));
+      // Target cameraX centers torso in left-center of zoomed viewport
+      const targetCameraX = Math.max(0, Math.min(WORLD_WIDTH - VIEW_BOUNDS_WIDTH, torsoX - VIEW_BOUNDS_WIDTH * 0.3));
       // Smooth camera interpolation
       cameraX += (targetCameraX - cameraX) * 0.1;
     } else {
       cameraX = 0;
     }
 
-    Bounds.shift(render.bounds, { x: cameraX, y: 0 });
+    render.bounds.min.x = cameraX;
+    render.bounds.max.x = cameraX + VIEW_BOUNDS_WIDTH;
+    render.bounds.min.y = CAMERA_MIN_Y;
+    render.bounds.max.y = CAMERA_MAX_Y;
+
+    // Synchronize mouse scale & offset with camera bounds for accurate interaction
+    if (mouse) {
+      Mouse.setScale(mouse, {
+        x: VIEW_BOUNDS_WIDTH / VIEW_WIDTH,
+        y: VIEW_BOUNDS_HEIGHT / VIEW_HEIGHT
+      });
+      Mouse.setOffset(mouse, {
+        x: render.bounds.min.x,
+        y: render.bounds.min.y
+      });
+    }
   }
 
   // Main Loop Game Logic Update
@@ -451,27 +469,35 @@
     }
   }
 
-  // Evaluate Win / Fail Condition
+  // Evaluate Win / Fail Condition (Relaxed: CLEAR if ANY body part enters goal bounds)
   function evaluateResult() {
+    const goalLeft = GOAL_X - GOAL_WIDTH / 2;
+    const goalRight = GOAL_X + GOAL_WIDTH / 2;
+    const goalTop = GOAL_Y - 40;
+    const goalBottom = GOAL_Y + 50;
+
+    const partInGoal = (bodyPart) => {
+      const pos = bodyPart.position;
+      return pos.x >= goalLeft && pos.x <= goalRight && pos.y >= goalTop && pos.y <= goalBottom;
+    };
+
+    // Check if ANY body part of Ojisan overlaps/enters goal area
+    const isClear = ojisanRagdoll.bodies.some(part => partInGoal(part));
+
     const torsoPos = ojisanRagdoll.torso.position;
-    const pelvisPos = ojisanRagdoll.pelvis.position;
-    const headPos = ojisanRagdoll.head.position;
-
-    const inGoalX = (pos) => pos.x >= GOAL_X - GOAL_WIDTH / 2 && pos.x <= GOAL_X + GOAL_WIDTH / 2;
-    const inGoalY = (pos) => pos.y >= GOAL_Y - 30 && pos.y <= GOAL_Y + 40;
-
-    const isClear = (inGoalX(torsoPos) && inGoalY(torsoPos)) ||
-                    (inGoalX(pelvisPos) && inGoalY(pelvisPos)) ||
-                    (inGoalX(headPos) && inGoalY(headPos));
-
     const finalMeters = Math.max(0, Math.round((torsoPos.x - CATAPULT_X) / PIXELS_PER_METER));
+    const targetMeters = Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER);
 
     if (isClear) {
       gameState = 'clear';
-      showResultOverlay(true, 'CLEAR!', `おじさんは見事にゴールエリア（${finalMeters}m）内に着地しました！おめでとう！`);
+      showResultOverlay(true, 'CLEAR!', `おじさんの体の一部が目標地点（${targetMeters}m）に到達しました！おめでとう！`);
     } else {
       gameState = 'failed';
-      showResultOverlay(false, 'FAILED...', `記録: ${finalMeters}m。ゴール（${Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER)}m）に届きませんでした。もう一度挑戦しよう！`);
+      let failReason = `目標（${targetMeters}m）に届けませんでした。`;
+      if (finalMeters > targetMeters) {
+        failReason = `目標（${targetMeters}m）を通り過ぎてしまいました。`;
+      }
+      showResultOverlay(false, 'FAILED...', `記録: ${finalMeters}m。${failReason}もう一度挑戦しよう！`);
     }
     updateUIStatus();
   }
@@ -512,9 +538,6 @@
     boostStatusEl.className = 'status-badge boost-ready';
 
     resultOverlay.classList.add('hidden');
-    if (boostEffectIndicator) {
-      boostEffectIndicator.classList.add('hidden');
-    }
 
     updateUIStatus();
     setupWorld();
@@ -524,30 +547,38 @@
   function customRender() {
     const ctx = render.context;
 
-    // Render in World Coordinates (Offset by cameraX)
+    const scaleX = VIEW_WIDTH / VIEW_BOUNDS_WIDTH;
+    const scaleY = VIEW_HEIGHT / VIEW_BOUNDS_HEIGHT;
+
+    // Matter.js restores canvas context before afterRender, so we transform context to world space here
     ctx.save();
-    ctx.translate(-cameraX, 0);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-cameraX, -CAMERA_MIN_Y);
 
     // 1. Distance Ruler Meter along Ground
     const groundY = 480;
     const goalDistanceMeters = Math.round((GOAL_X - CATAPULT_X) / PIXELS_PER_METER);
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = '11px sans-serif';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
 
-    // Draw meter ticks every 5m (150px) up to world end
+    // Draw meter ticks: minor ticks every 5m, major ticks with labels every 10m
     for (let meters = 0; meters <= Math.round(WORLD_WIDTH / PIXELS_PER_METER); meters += 5) {
       const x = CATAPULT_X + meters * PIXELS_PER_METER;
-      if (x >= cameraX - 100 && x <= cameraX + VIEW_WIDTH + 100) {
+      if (x >= cameraX - 100 && x <= cameraX + VIEW_BOUNDS_WIDTH + 100) {
+        const isMajor = meters % 10 === 0;
         ctx.beginPath();
+        ctx.lineWidth = isMajor ? 2 : 1;
         ctx.moveTo(x, groundY);
-        ctx.lineTo(x, groundY + 12);
+        ctx.lineTo(x, groundY + (isMajor ? 16 : 8));
         ctx.stroke();
 
-        ctx.fillText(`${meters}m`, x, groundY + 24);
+        if (isMajor) {
+          ctx.fillText(`${meters}m`, x, groundY + 32);
+        }
       }
     }
     ctx.restore();
