@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ojipalt (オジパルト) - 2D物理アクションゲーム</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Matter.js Physics Engine CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+</head>
+<body>
+  <div id="game-container">
+    <header id="ui-header">
+      <div class="title-section">
+        <h1>👴🏼 ojipalt <span class="subtitle">オジパルト</span></h1>
+      </div>
+      <div class="status-section">
+        <div id="boost-status" class="status-badge boost-ready">BOOST: READY</div>
+        <div id="game-status" class="status-badge status-aiming">AIMING</div>
+      </div>
+      <div class="control-section">
+        <button id="retry-btn" title="リトライ (Rキー)">🔄 RETRY</button>
+      </div>
+    </header>
+
+    <div id="canvas-wrapper">
+      <div id="result-overlay" class="hidden">
+        <div id="result-card">
+          <h2 id="result-title">CLEAR!</h2>
+          <p id="result-message">おじさんは見事にゴールインしました！</p>
+          <button id="overlay-retry-btn">もう一度遊ぶ</button>
+        </div>
+      </div>
+      <div id="boost-effect-indicator" class="boost-banner hidden">BOOST!</div>
+    </div>
+
+    <footer id="ui-instructions">
+      <p>💡 <strong>操作方法:</strong> 左の「おじさん」をドラッグして後ろに引き、放すと発射！ 飛行中に画面クリック/タップで空中オシリブースト加速！（1回限定）</p>
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #1a1e29;
+  color: #ffffff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#game-container {
+  width: 960px;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background-color: #252b3b;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+#ui-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background-color: #1f2432;
+  border-bottom: 2px solid #333b50;
+}
+
+.title-section h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffcc00;
+  letter-spacing: 1px;
+}
+
+.title-section .subtitle {
+  font-size: 0.9rem;
+  color: #a0aec0;
+  font-weight: normal;
+  margin-left: 6px;
+}
+
+.status-section {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.status-badge {
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.boost-ready {
+  background-color: #38a169;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(56, 161, 105, 0.6);
+  animation: pulse-glow 1.5s infinite alternate;
+}
+
+.boost-used {
+  background-color: #718096;
+  color: #e2e8f0;
+}
+
+.status-aiming {
+  background-color: #3182ce;
+  color: white;
+}
+
+.status-flying {
+  background-color: #dd6b20;
+  color: white;
+}
+
+.status-clear {
+  background-color: #38a169;
+  color: white;
+}
+
+.status-failed {
+  background-color: #e53e3e;
+  color: white;
+}
+
+#retry-btn, #overlay-retry-btn {
+  background-color: #e53e3e;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
+
+#retry-btn:hover, #overlay-retry-btn:hover {
+  background-color: #c53030;
+  transform: translateY(-1px);
+}
+
+#retry-btn:active, #overlay-retry-btn:active {
+  transform: translateY(1px);
+}
+
+#canvas-wrapper {
+  position: relative;
+  width: 960px;
+  height: 540px;
+  background-color: #87ceeb;
+  overflow: hidden;
+}
+
+#canvas-wrapper canvas {
+  display: block;
+}
+
+.boost-banner {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  font-size: 3rem;
+  font-weight: 900;
+  color: #ff3300;
+  text-shadow: 0 0 12px #ffff00, 3px 3px 0px #000;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 10;
+}
+
+.boost-banner.active {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.3);
+}
+
+#result-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.65);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 20;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.3s ease;
+}
+
+#result-card {
+  background: linear-gradient(135deg, #2d3748, #1a202c);
+  border: 3px solid #ffcc00;
+  padding: 30px 50px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+}
+
+#result-title {
+  font-size: 2.8rem;
+  margin-bottom: 10px;
+  letter-spacing: 2px;
+}
+
+#result-card.clear #result-title {
+  color: #48bb78;
+  text-shadow: 0 0 10px rgba(72, 187, 120, 0.5);
+}
+
+#result-card.failed #result-title {
+  color: #f56565;
+  text-shadow: 0 0 10px rgba(245, 101, 101, 0.5);
+}
+
+#result-message {
+  font-size: 1.1rem;
+  margin-bottom: 24px;
+  color: #e2e8f0;
+}
+
+#ui-instructions {
+  background-color: #1f2432;
+  padding: 10px 20px;
+  font-size: 0.88rem;
+  color: #cbd5e0;
+  text-align: center;
+  border-top: 1px solid #333b50;
+}
+
+.hidden {
+  display: none !important;
+}
+
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 5px rgba(56, 161, 105, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(56, 161, 105, 0.9);
+  }
+}
