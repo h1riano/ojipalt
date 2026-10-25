@@ -50,7 +50,7 @@ This document provides a comprehensive architectural overview and implementation
   4. Left Leg (rectangle, 12x30)
   5. Right Leg (rectangle, 12x30)
 * **Joints (Constraints)**: Stiff neck, waist, left hip, and right hip constraints connect the body parts.
-* **Slingshot**: An elastic `Constraint` binds the catapult post (`x=360, y=340`) to Ojisan's torso (`stiffness: 0.08`). When dragged beyond 25px and released, `launchOjisan()` detaches the sling after 80ms and sets `gameState = 'flying'`.
+* **Slingshot**: An elastic `Constraint` binds the catapult post (`x=360, y=340`) to Ojisan's torso (`stiffness: 0.08`). When dragged beyond 25px and released, `launchOjisan()` detaches the sling immediately and sets `gameState = 'flying'`. Initial launch velocity is calculated purely from displacement distance and vector direction to the anchor point (`dist * LAUNCH_SPEED_FACTOR`), ignoring mouse/touch release gesture speed.
 
 ### 3.2 Dynamic Wide Camera & Zoom-Out
 * **Viewport vs View Bounds**:

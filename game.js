@@ -336,18 +336,38 @@
     });
   }
 
-  // Launch Ojisan from Catapult
+  // Launch Ojisan from Catapult based strictly on drag distance and direction
   function launchOjisan() {
     gameState = 'flying';
     updateUIStatus();
 
-    // Release elastic constraint after a brief moment to simulate sling release
-    setTimeout(() => {
-      if (elasticConstraint) {
-        Composite.remove(engine.world, elasticConstraint);
-        elasticConstraint = null;
-      }
-    }, 80);
+    const anchor = { x: CATAPULT_X, y: CATAPULT_Y - 20 };
+    const torsoPos = ojisanRagdoll.torso.position;
+    const pullVector = Vector.sub(anchor, torsoPos);
+    const dist = Vector.magnitude(pullVector);
+
+    if (dist > 0) {
+      const dir = Vector.normalise(pullVector);
+      // Determine initial velocity magnitude purely from displacement distance
+      const LAUNCH_SPEED_FACTOR = 0.18;
+      const launchSpeed = dist * LAUNCH_SPEED_FACTOR;
+      const velocityVector = {
+        x: dir.x * launchSpeed,
+        y: dir.y * launchSpeed
+      };
+
+      // Reset velocity & angular velocity on all body parts to override drag gesture speed
+      ojisanRagdoll.bodies.forEach(body => {
+        Body.setVelocity(body, velocityVector);
+        Body.setAngularVelocity(body, 0);
+      });
+    }
+
+    // Immediately remove elastic constraint upon launch
+    if (elasticConstraint) {
+      Composite.remove(engine.world, elasticConstraint);
+      elasticConstraint = null;
+    }
   }
 
   // Handle Air Boost Click/Tap
